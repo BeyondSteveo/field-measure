@@ -4,7 +4,7 @@
 <meta name="theme-color" content="#15181b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Field Measure">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
@@ -41,7 +41,10 @@ html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);overflow:hidden}
 #app{display:flex;flex-direction:column;height:100%}
 
-header{background:var(--ink);color:var(--bg);padding:9px 16px;display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex:0 0 auto}
+header{background:var(--ink);color:var(--bg);display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex:0 0 auto;
+  /* Clear the notch and status bar when running from the home screen. On iOS the
+     inset is zero in Safari, so this costs nothing there. */
+  padding:calc(9px + env(safe-area-inset-top,0px)) 16px 9px}
 header h1{font-family:var(--display);font-size:21px;letter-spacing:.06em;text-transform:uppercase;margin:0;font-weight:700}
 #hdr{display:flex;align-items:center;gap:8px;min-width:0}
 #sync{font-family:var(--body);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;
