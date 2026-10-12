@@ -1,0 +1,16 @@
+{
+  "name": "Field Measure",
+  "short_name": "Field Measure",
+  "description": "Capture house measurements on site - draw the footprint, attach dimensions, take it back to SketchUp.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#15181b",
+  "theme_color": "#15181b",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
