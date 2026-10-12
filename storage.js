@@ -65,33 +65,88 @@
       };
       return;
     }
-    var box = sheet('<div style="font-family:var(--display,system-ui);font-size:19px;letter-spacing:.06em;' +
-      'text-transform:uppercase;font-weight:700">Sign in to sync</div>' +
-      '<div style="font-size:13.5px;line-height:1.5;color:var(--ink-2,#666)">Your email gets a link. ' +
-      'Tap it on this phone and you stay signed in. Measurements save to this phone either way.</div>' +
-      '<input id="fmem" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" ' +
-      'style="font-size:16px;padding:12px;border:2px solid var(--line,#ccc);border-radius:9px;' +
-      'background:var(--surface-2,#f4f4f4);color:var(--ink,#111);width:100%">' +
+
+    /* Email and password, typed straight into the app. No email is sent, so
+       nothing here can be rate limited, and nothing has to redirect back from
+       Safari into the home-screen app. */
+    var btn = 'border:none;border-radius:9px;padding:13px;font-family:var(--display,system-ui);' +
+      'font-size:16px;letter-spacing:.06em;text-transform:uppercase;font-weight:700';
+    var fld = 'font-size:16px;padding:12px;border:2px solid var(--line,#ccc);border-radius:9px;' +
+      'background:var(--surface-2,#f4f4f4);color:var(--ink,#111);width:100%';
+
+    var box = sheet('<div id="fmtitle" style="font-family:var(--display,system-ui);font-size:19px;' +
+      'letter-spacing:.06em;text-transform:uppercase;font-weight:700">Sign in to sync</div>' +
+      '<div style="font-size:13.5px;line-height:1.5;color:var(--ink-2,#666)">Measurements save to this ' +
+      'phone either way. Signing in is what gets them off it.</div>' +
+      '<input id="fmem" type="email" inputmode="email" autocomplete="username" ' +
+      'autocapitalize="none" autocorrect="off" placeholder="you@example.com" style="' + fld + '">' +
+      '<input id="fmpw" type="password" autocomplete="current-password" ' +
+      'placeholder="password" style="' + fld + '">' +
       '<div id="fmmsg" style="font-size:13px;line-height:1.45;min-height:18px;color:var(--ink-2,#666)"></div>' +
-      '<button id="fmgo" style="border:none;border-radius:9px;padding:13px;background:var(--accent,#ff5a1f);' +
-      'color:var(--accent-ink,#fff);font-family:var(--display,system-ui);font-size:16px;letter-spacing:.06em;' +
-      'text-transform:uppercase;font-weight:700">Send link</button>' +
+      '<button id="fmgo" style="' + btn + ';background:var(--accent,#ff5a1f);' +
+      'color:var(--accent-ink,#fff)">Sign in</button>' +
+      '<button id="fmswap" style="border:none;border-radius:9px;padding:11px;background:none;' +
+      'color:var(--ink-2,#666);font-size:14px;text-decoration:underline">Create an account instead</button>' +
       '<button id="fmcx" style="border:none;border-radius:9px;padding:11px;background:none;' +
       'color:var(--ink-2,#666);font-size:14px">Not now</button>');
+
     var msg = box.querySelector('#fmmsg');
-    box.querySelector('#fmcx').onclick = function () { box.remove(); };
-    box.querySelector('#fmgo').onclick = function () {
-      var email = (box.querySelector('#fmem').value || '').trim();
-      if (!email) { msg.textContent = 'Enter your email first.'; return; }
-      msg.textContent = 'Sending...';
-      client.auth.signInWithOtp({
-        email: email,
-        options: { emailRedirectTo: location.href.split('#')[0] }
-      }).then(function (r) {
-        if (r.error) { msg.textContent = r.error.message || 'That did not go through.'; return; }
-        msg.textContent = 'Link sent. Check your email on this phone, then come back.';
-      }, function () { msg.textContent = 'Could not reach the server.'; });
+    var go = box.querySelector('#fmgo');
+    var title = box.querySelector('#fmtitle');
+    var swap = box.querySelector('#fmswap');
+    var pw = box.querySelector('#fmpw');
+    var creating = false;
+
+    swap.onclick = function () {
+      creating = !creating;
+      title.textContent = creating ? 'Create an account' : 'Sign in to sync';
+      go.textContent = creating ? 'Create account' : 'Sign in';
+      swap.textContent = creating ? 'I already have an account' : 'Create an account instead';
+      pw.setAttribute('autocomplete', creating ? 'new-password' : 'current-password');
+      msg.textContent = creating ? 'Pick something at least 8 characters.' : '';
     };
+
+    box.querySelector('#fmcx').onclick = function () { box.remove(); };
+
+    function submit() {
+      var email = (box.querySelector('#fmem').value || '').trim();
+      var pass = pw.value || '';
+      if (!email || !pass) { msg.textContent = 'Fill in both boxes.'; return; }
+      if (creating && pass.length < 8) { msg.textContent = 'Use at least 8 characters.'; return; }
+      go.disabled = true;
+      msg.textContent = creating ? 'Creating...' : 'Signing in...';
+
+      var call = creating
+        ? client.auth.signUp({ email: email, password: pass })
+        : client.auth.signInWithPassword({ email: email, password: pass });
+
+      call.then(function (r) {
+        go.disabled = false;
+        if (r.error) {
+          var m = (r.error.message || '').toLowerCase();
+          if (m.indexOf('already registered') !== -1) {
+            msg.textContent = 'That email already has an account. Sign in instead.';
+          } else if (m.indexOf('invalid login') !== -1) {
+            msg.textContent = 'Email or password not right.';
+          } else {
+            msg.textContent = r.error.message || 'That did not go through.';
+          }
+          return;
+        }
+        if (!r.data || !r.data.session) {
+          /* Only happens if the project still requires email confirmation. */
+          msg.textContent = 'Account made, but it needs confirming by email first.';
+          return;
+        }
+        box.remove();
+      }, function () {
+        go.disabled = false;
+        msg.textContent = 'Could not reach the server.';
+      });
+    }
+
+    go.onclick = submit;
+    pw.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
   }
 
   function esc(s) {
