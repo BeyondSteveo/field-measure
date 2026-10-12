@@ -7,7 +7,7 @@
  * Bump VERSION whenever the app files change, or phones will keep serving the old
  * copy from cache.
  */
-var VERSION = 'fm-v1';
+var VERSION = 'fm-v2';
 var CORE = [
   './',
   'index.html',
@@ -20,14 +20,35 @@ var CORE = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js'
 ];
 
+/* Stock one file into the cache, defensively.
+ *
+ * Two things this has to survive on iOS Safari:
+ *   - Building a Request with options Safari does not implement can throw, and a
+ *     throw in here would abandon the whole install, leaving no offline support
+ *     at all and no visible sign of it. Hence the nested try/catch.
+ *   - cache.add() rejects anything that is not a normal 200, which includes the
+ *     opaque responses you get from another domain. So fetch and put by hand.
+ */
+function cacheOne(cache, url) {
+  var crossOrigin = url.indexOf('http') === 0;
+  var req;
+  try {
+    req = crossOrigin ? new Request(url, { mode: 'no-cors' }) : new Request(url);
+  } catch (e) {
+    try { req = new Request(url); } catch (e2) { return Promise.resolve(); }
+  }
+  return fetch(req).then(function (res) {
+    if (!res) return;
+    if (res.ok || res.type === 'opaque') return cache.put(req, res);
+  }).catch(function () {});
+}
+
 self.addEventListener('install', function (e) {
   e.waitUntil(
-    caches.open(VERSION).then(function (c) {
-      /* One at a time rather than addAll, so a single file that fails to fetch
-         (a CDN hiccup) does not abandon the whole install. */
-      return Promise.all(CORE.map(function (u) {
-        return c.add(new Request(u, { cache: 'reload' })).catch(function () {});
-      }));
+    caches.open(VERSION).then(function (cache) {
+      /* One at a time, each swallowing its own failure, so a single missing file
+         cannot stop the rest from being cached. */
+      return Promise.all(CORE.map(function (u) { return cacheOne(cache, u); }));
     }).then(function () { return self.skipWaiting(); })
   );
 });
