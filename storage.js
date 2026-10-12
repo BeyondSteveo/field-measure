@@ -21,6 +21,7 @@
   var lastPushed = '';
   var pending = null;         // newest payload waiting to go out
   var ready = false;
+  var pulled = false;         // has the first read from the server finished?
 
   function status(mode) { try { onStatus(mode); } catch (e) {} }
 
@@ -172,6 +173,8 @@
 
   function pushNow() {
     if (!client || !session || pushing) return Promise.resolve(false);
+    /* Never write before the first read has come back — see handlePulled. */
+    if (!pulled) return Promise.resolve(false);
     var db = pending;
     if (!db) return Promise.resolve(false);
     var body = JSON.stringify(db);
@@ -214,8 +217,13 @@
       client.auth.onAuthStateChange(function (_e, s) {
         var was = !!session;
         session = s || null;
-        if (session && !was) { pull().then(handlePulled); }
-        if (!session) status('local');
+        if (!session) { pulled = false; status('local'); return; }
+        if (!was) {
+          /* The library runs this callback while holding its own lock. Calling
+             the database from inside it can deadlock, and the read simply never
+             comes back. Stepping outside the callback first avoids that. */
+          setTimeout(function () { pull().then(handlePulled); }, 0);
+        }
       });
 
       return client.auth.getSession().then(function (r) {
@@ -229,6 +237,10 @@
         if (remote && remote.jobs && remote.jobs.length) {
           try { onRemote(remote); } catch (e) {}
         }
+        /* Only now is it safe to write. Before this point the app is holding
+           whatever is on the phone, which on a new phone is nothing — pushing
+           that would wipe the real measurements on the server. */
+        pulled = true;
         if (pending) return pushNow();
         status('ok');
       }
