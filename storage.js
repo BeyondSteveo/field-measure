@@ -46,8 +46,12 @@
         'sync once you are back online.</div>' +
         '<button id="fmok" style="border:none;border-radius:9px;padding:13px;background:var(--surface-2,#eee);' +
         'color:var(--ink,#111);font-family:var(--display,system-ui);font-size:16px;letter-spacing:.06em;' +
-        'text-transform:uppercase;font-weight:700">Close</button>');
+        'text-transform:uppercase;font-weight:700">Close</button>' +
+        '<div id="fmdiag" style="font-family:ui-monospace,monospace;font-size:11px;line-height:1.5;' +
+        'color:var(--ink-2,#666);word-break:break-word;border-top:1px solid var(--line,#ccc);' +
+        'padding-top:9px">checking offline support...</div>');
       n.querySelector('#fmok').onclick = function () { n.remove(); };
+      offlineReport(n.querySelector('#fmdiag'));
       return;
     }
     if (session) {
@@ -58,12 +62,16 @@
         'color:var(--ink,#111);font-family:var(--display,system-ui);font-size:16px;letter-spacing:.06em;' +
         'text-transform:uppercase;font-weight:700">Sign out</button>' +
         '<button id="fmcx" style="border:none;border-radius:9px;padding:11px;background:none;' +
-        'color:var(--ink-2,#666);font-size:14px">Cancel</button>');
+        'color:var(--ink-2,#666);font-size:14px">Cancel</button>' +
+        '<div id="fmdiag" style="font-family:ui-monospace,monospace;font-size:11px;line-height:1.5;' +
+        'color:var(--ink-2,#666);word-break:break-word;border-top:1px solid var(--line,#ccc);' +
+        'padding-top:9px">checking offline support...</div>');
       s.querySelector('#fmcx').onclick = function () { s.remove(); };
       s.querySelector('#fmout').onclick = function () {
         s.remove();
         client.auth.signOut().then(function () { session = null; status('local'); });
       };
+      offlineReport(s.querySelector('#fmdiag'));
       return;
     }
 
@@ -89,8 +97,12 @@
       '<button id="fmswap" style="border:none;border-radius:9px;padding:11px;background:none;' +
       'color:var(--ink-2,#666);font-size:14px;text-decoration:underline">Create an account instead</button>' +
       '<button id="fmcx" style="border:none;border-radius:9px;padding:11px;background:none;' +
-      'color:var(--ink-2,#666);font-size:14px">Not now</button>');
+      'color:var(--ink-2,#666);font-size:14px">Not now</button>' +
+      '<div id="fmdiag" style="font-family:ui-monospace,monospace;font-size:11px;line-height:1.5;' +
+      'color:var(--ink-2,#666);word-break:break-word;border-top:1px solid var(--line,#ccc);' +
+      'padding-top:9px">checking offline support...</div>');
 
+    offlineReport(box.querySelector('#fmdiag'));
     var msg = box.querySelector('#fmmsg');
     var go = box.querySelector('#fmgo');
     var title = box.querySelector('#fmtitle');
@@ -148,6 +160,42 @@
 
     go.onclick = submit;
     pw.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+  }
+
+  /* Offline diagnostics. Reports what the service worker and cache are actually
+     doing, rather than leaving it to be inferred from whether the app loads. */
+  function offlineReport(el) {
+    if (!('serviceWorker' in navigator)) {
+      el.textContent = 'Offline: not supported by this browser.';
+      return;
+    }
+    var bits = [];
+    navigator.serviceWorker.getRegistrations().then(function (regs) {
+      if (!regs.length) { bits.push('worker: none registered'); return null; }
+      var r = regs[0];
+      bits.push('worker: ' + (r.active ? 'active' : (r.installing ? 'installing' : (r.waiting ? 'waiting' : 'unknown'))));
+      bits.push('controlling: ' + (navigator.serviceWorker.controller ? 'yes' : 'no'));
+      return null;
+    }).catch(function (e) {
+      bits.push('worker: error (' + (e && e.name) + ')');
+    }).then(function () {
+      if (!window.caches) { bits.push('cache: unavailable'); return null; }
+      return caches.keys().then(function (keys) {
+        bits.push('caches: ' + (keys.length ? keys.join(', ') : 'none'));
+        if (!keys.length) return null;
+        return caches.open(keys[0]).then(function (c) {
+          return c.keys().then(function (reqs) {
+            bits.push('files cached: ' + reqs.length);
+            var hasPage = reqs.some(function (q) {
+              return q.url.indexOf('index.html') !== -1 || /\/field-measure\/$/.test(q.url);
+            });
+            bits.push('app page cached: ' + (hasPage ? 'yes' : 'NO'));
+          });
+        });
+      }).catch(function (e) { bits.push('cache: error (' + (e && e.name) + ')'); });
+    }).then(function () {
+      el.textContent = bits.join(' | ');
+    });
   }
 
   function esc(s) {
