@@ -7,7 +7,7 @@
  * Bump VERSION whenever the app files change, or phones will keep serving the old
  * copy from cache.
  */
-var VERSION = 'fm-v2';
+var VERSION = 'fm-v3';
 var CORE = [
   './',
   'index.html',
@@ -74,26 +74,45 @@ self.addEventListener('fetch', function (e) {
      stale session would be worse than no answer at all. */
   if (url.hostname.indexOf('supabase') !== -1) return;
 
+  /* The app's own code is fetched from the network first, so a new version is
+     picked up the moment it is published, with the cache as the fallback when
+     there is no signal. Everything else (icons, the Supabase library) is served
+     from cache first, since those rarely change and speed matters more. */
+  var sameOrigin = (url.origin === self.location.origin);
+  var isAppCode = sameOrigin && /\.(html|js|webmanifest)$|\/$/.test(url.pathname);
+  var networkFirst = (req.mode === 'navigate') || isAppCode;
+
   e.respondWith(
     caches.open(VERSION).then(function (cache) {
-      return cache.match(req).then(function (hit) {
-        var fresh = fetch(req).then(function (res) {
-          /* Opaque cross-origin responses (fonts) have status 0 but are still
-             usable from cache, so keep those too. */
+      function fromNetwork() {
+        return fetch(req).then(function (res) {
           if (res && (res.ok || res.type === 'opaque')) {
             cache.put(req, res.clone()).catch(function () {});
           }
           return res;
-        }).catch(function () { return null; });
+        });
+      }
 
-        /* Serve the cached copy at once if we have one, and let the fetch above
-           quietly refresh it for next launch. */
+      if (networkFirst) {
+        return fromNetwork().catch(function () {
+          return cache.match(req).then(function (hit) {
+            if (hit) return hit;
+            if (req.mode === 'navigate') {
+              /* Offline on a cold open: hand back the app shell by either of the
+                 names it may have been cached under. */
+              return cache.match('index.html').then(function (h2) {
+                return h2 || cache.match('./') ||
+                  new Response('', { status: 504, statusText: 'Offline' });
+              });
+            }
+            return new Response('', { status: 504, statusText: 'Offline' });
+          });
+        });
+      }
+
+      return cache.match(req).then(function (hit) {
         if (hit) return hit;
-        return fresh.then(function (res) {
-          if (res) return res;
-          /* Offline with nothing cached: for a page request, fall back to the
-             app shell so the user sees the app rather than a browser error. */
-          if (req.mode === 'navigate') return cache.match('index.html');
+        return fromNetwork().catch(function () {
           return new Response('', { status: 504, statusText: 'Offline' });
         });
       });
